@@ -3,39 +3,58 @@ package com.example.lab_week_10
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.room.Room
-import com.example.lab_week_10.database.TotalDatabase
-import com.example.lab_week_10.viewmodels.TotalViewModel
 import com.example.lab_week_10.database.Total
+import com.example.lab_week_10.database.TotalDatabase
+import com.example.lab_week_10.database.TotalObject
+import com.example.lab_week_10.viewmodels.TotalViewModel
+import java.util.Date
 
 class MainActivity : AppCompatActivity() {
-    // Create database instance lazily
+
     private val db by lazy { prepareDatabase() }
 
-    // ViewModel
     private val viewModel by lazy {
         ViewModelProvider(this)[TotalViewModel::class.java]
     }
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        prepareViewModel()
 
-        // Initialize the value of the total from the database
+        prepareViewModel()
         initializeValueFromDatabase()
+    }
+
+    override fun onStart() {
+        super.onStart()
+
+        val total = db.totalDao().getTotal(ID).firstOrNull()
+        total?.let {
+            Toast.makeText(this, "Last updated: ${it.total.date}", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        db.totalDao().update(Total(ID, viewModel.total.value!!))
+
+        val currentValue = viewModel.total.value ?: 0
+        val newDate = Date().toString()
+
+        val updatedTotal = Total(
+            id = ID,
+            total = TotalObject(
+                value = currentValue,
+                date = newDate
+            )
+        )
+
+        db.totalDao().update(updatedTotal)
     }
 
-    // Create and build the TotalDatabase with the name 'total-database'
-    // allowMainThreadQueries() is used to allow queries to be run on the main thread (not recommended in production)
     private fun prepareDatabase(): TotalDatabase {
         return Room.databaseBuilder(
             applicationContext,
@@ -43,13 +62,23 @@ class MainActivity : AppCompatActivity() {
         ).allowMainThreadQueries().build()
     }
 
-    // Initialize the value of the total from the database
     private fun initializeValueFromDatabase() {
-        val total = db.totalDao().getTotal(ID)
-        if (total.isEmpty()) {
-            db.totalDao().insert(Total(id = 1, total = 0))
+        val savedTotal = db.totalDao().getTotal(ID).firstOrNull()
+
+        if (savedTotal == null) {
+            // Insert default value
+            val newTotal = Total(
+                id = ID,
+                total = TotalObject(
+                    value = 0,
+                    date = Date().toString()
+                )
+            )
+            db.totalDao().insert(newTotal)
+            viewModel.setTotal(0)
         } else {
-            viewModel.setTotal(total.first().total)
+            // Load value from DB ke ViewModel
+            viewModel.setTotal(savedTotal.total.value)
         }
     }
 
@@ -59,7 +88,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun prepareViewModel() {
-        // Observe the LiveData object
         viewModel.total.observe(this) { total ->
             updateText(total)
         }
@@ -69,9 +97,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // The ID of the Total object in the database
-    // For simplicity, we only have one Total object in the database
-    // So the ID is always 1
     companion object {
         const val ID: Long = 1
     }
